@@ -1,0 +1,28 @@
+data:
+  root: ./data/plantsegv2
+  input_size: 256 # must be low, bad gpu
+
+model:
+  architecture: unet          
+  # encoder: resnet34    ### way to heavy       
+  encoder: mobilenet_v2  ##lighter
+  encoder_weights: imagenet
+  in_channels: 3
+  num_classes: 1              
+
+training:
+  epochs: 10
+  batch_size: 8
+  num_workers: 8
+  learning_rate: 0.0001
+  optimizer: adam             
+  scheduler: cosine           
+
+loss:
+  bce_weight: 0.5 # check mix coeff
+  dice_weight: 0.5
+
+checkpoints:
+  save_dir: ./checkpoints # maybe remove checkpoints?
+  save_best_only: true
+  monitor: val_iou            

@@ -5,11 +5,15 @@ import shutil
 import json
 from pathlib import Path
 
+import torch
+from torch.utils.data import Dataset
+import cv2
+import numpy as np
 import random
 from sklearn.model_selection import train_test_split
 
 
-def download_kaggle_dataset(dataset = "weitianqi/plantseg", dest = './data/raw'):
+def download_kaggle_dataset(dataset = "weitianqi/plantseg", dest = './data'):
     # dataset name is the URL, NOT the downloaded dataset path
     import kagglehub
     
@@ -17,76 +21,79 @@ def download_kaggle_dataset(dataset = "weitianqi/plantseg", dest = './data/raw')
     path = kagglehub.dataset_download(dataset,output_dir=dest)
     print("Path to dataset files:", path)
 
-def get_samples(dir = "./data/YOLO_format/plantsegv2"):
-    # Iterates through label txt (YOLO format), checks if theres image with the same name. Returns a list of valid samples (only the names)
-    dir = Path(dir)
-    samples = []
-    for f in Path(dir / 'labels').glob("*.txt"):
-        filename = str(f).split("/")[-1].split(".")[0]
-        for ext in [".jpg"]: ## maybe add extra ext. later
-            if Path(dir / "images" / (filename + ext)).exists():
-                print("yo")
-    return samples
+#DELETE
+def copy_dummy_to_raw():
+    shutil.rmtree('./data/raw',ignore_errors=True)
+    os.mkdir('./data/raw')
+    shutil.copytree('./data/raw_DUMMY','./data/raw',dirs_exist_ok=True)
+#######
 
-def convert_to_YOLO(raw_dir= './data/raw/plantsegv2', out_dir = './data/YOLO_format/plantsegv2'):
-    from ultralytics.data.converter import convert_coco
-    raw_dir = Path(raw_dir)
-    out_dir = Path(out_dir)
-
-    convert_coco(
-        labels_dir=raw_dir,
-        save_dir=out_dir,
-        use_keypoints=False,
-        use_segments=True,
-        cls91to80=False,
-    )
-    ## MOVE LABELS IF IN A FOLDER
-    # if /labels/ann_folder/*.txt -> i want /labels/*.txt
-    ann_folder = next(os.walk(out_dir / "labels"))[1]
-    if ann_folder:
-        for f in Path(out_dir / "labels" /ann_folder[0]).glob("*.txt"):
-            shutil.move(str(f), str(out_dir / "labels" / f.name))
-        os.rmdir(out_dir / "labels" / ann_folder[0])
+class DatasetInfo:
+    def __init__(self, root: Path):
+        self.root = Path(root)
     
+    def summary(self):
+        print("="*30)
+        print(f"  Dataset: {self.root.name}")
+        print("="*30)
 
-    # MOVE images
-    (out_dir / "images").mkdir(parents=True, exist_ok=True)
-    for split in ["train","test","val"]:
-        if not (out_dir / "images" / split).exists():
-            shutil.move(raw_dir / "images" / split, out_dir / "images")
-    
+        for split in ["train", "val", "test"]:
+            img_dir  = self.root / "images"      / split
+            mask_dir = self.root / "annotations" / split
 
+            if not img_dir.exists():
+                continue
 
+            images = list(img_dir.glob("*.*"))
+            masks  = list(mask_dir.glob("*.png")) if mask_dir.exists() else []
+            paired = sum(1 for i in images if (mask_dir / i.with_suffix('.png').name).exists())
 
+            print(f"  [{split}]")
+            print(f"    Images      : {len(images)}")
+            print(f"    Masks       : {len(masks)}")
+            print(f"    Paired      : {paired}")
+            if len(images) != paired:
+                print(f"    Missing masks: {len(images) - paired}")
+        print("="*30)
 
+class CustomDataset(Dataset):
+    def __init__(self, root: Path, split: str, transforms=None):
+        self.img_dir  = root / "images"      / split
+        self.mask_dir = root / "annotations" / split
+        self.transforms = transforms
 
+        self.samples = [
+            f.stem for f in self.img_dir.glob("*.jpg")
+            if (self.mask_dir / f.with_suffix('.png').name).exists()
+        ]
 
+    def __len__(self):
+        return len(self.samples)
 
+    def __getitem__(self, idx):
+        name = self.samples[idx]
+        image = cv2.imread(str(self.img_dir  / f"{name}.jpg"))
+        mask  = cv2.imread(str(self.mask_dir / f"{name}.png"), cv2.IMREAD_GRAYSCALE)
 
-    # samples = get_samples(out_path)
-    # seed = 42
-    # random.seed(seed)
-    # indices = list(range(len(samples)))
-    # train_idx, test_idx = train_test_split(indices, test_size=test_split, random_state=seed)
-    # train_idx, val_idx  = train_test_split(train_idx, test_size=val_split / (1 - test_split), random_state=seed)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mask  = (mask > 0).astype(np.uint8)  # binary: 0 or 1
 
-    # for split in ['train','test','val']:
-    #     (out_path / "images" / split).mkdir(parents=True, exist_ok=True)
+        if self.transforms:
+            aug   = self.transforms(image=image, mask=mask)
+            image = aug["image"]
+            mask  = aug["mask"]
 
-    #     (out_path / "labels" / split).mkdir(parents=True, exist_ok=True)
+        image = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
+        mask  = torch.from_numpy(mask).unsqueeze(0).float()
 
-
-
+        return image, mask
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download and dataset formating")
     parser.add_argument("--dataset", type=Path, default='weitianqi/plantseg')
-    parser.add_argument("--download-dst", type=Path, default="./data/raw")
-    parser.add_argument("--format-dst", type=Path, default="./data/YOLO_format")
+    parser.add_argument("--download-dir", type=Path, default="./data")
     args = parser.parse_args()
 
     # download_kaggle_dataset()
-    convert_to_YOLO()
-    # get_samples()
-
-    
+    # copy_dummy_to_raw()
+    dataset_stats = DatasetInfo(Path(args.download_dir/ 'plantsegv2')).summary()

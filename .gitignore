@@ -3,3 +3,6 @@ todo.txt
 .claude
 
 data/*
+__pycache__
+checkpoints
+eval_output
