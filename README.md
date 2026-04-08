@@ -4,7 +4,7 @@ Binary segmentation of diseased regions on plant leaves using a UNet architectur
 
 ## Results
 
-<img src="eval_output/predictions.png" width="400"/>
+<img src="predictions.png" width="400"/>
 
 
 *Columns: Input Image | Ground Truth Mask | Predicted Mask*
