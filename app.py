@@ -44,7 +44,7 @@ def predict(image, model, device, config, threshold=0.5, alpha=0.5):
 
 
 def run_app():
-    ### absolute basic app for segmenting an uploaded image
+    ### absolutly basic app for segmenting an uploaded image
     model, device, config = load_model()
 
     def inference(image):
@@ -66,6 +66,8 @@ def run_app():
         btn.click(fn=inference, inputs=input_image, outputs=[overlay_out, mask_out])
 
     demo.launch(server_name="0.0.0.0") # local-dynamic port
+
+
 
 
 
